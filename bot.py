@@ -1,7 +1,10 @@
 import os
+import time
 from pyrogram import Client, filters
 from pyrogram.types import Message
+import pyrogram.errors
 
+# ====== RAILWAY ENV VARIABLES ======
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -10,6 +13,14 @@ if not BOT_TOKEN or not API_ID or not API_HASH:
     print("❌ Missing BOT_TOKEN / API_ID / API_HASH")
     exit(0)
 
+# ====== TIME SYNC FIX ======
+try:
+    os.environ["TZ"] = "Asia/Colombo"  # Change as needed
+    time.tzset()
+except Exception:
+    pass  # tzset not available on some systems
+
+# ====== CREATE CLIENT ======
 app = Client(
     "rename_bot",
     api_id=API_ID,
@@ -17,16 +28,19 @@ app = Client(
     bot_token=BOT_TOKEN
 )
 
+# ====== TEMP STORAGE ======
 user_files = {}
 user_thumbs = {}
 user_stage = {}
 
-# ===== Start =====
+# ====== /start MESSAGE ======
 @app.on_message(filters.command("start"))
 async def start_msg(client, message: Message):
-    await message.reply("👋 Hi! Send me a file to rename.\nOptional thumbnail: send /skip to skip.")
+    await message.reply(
+        "👋 Hi! Send me a file to rename.\nOptional thumbnail: send /skip to skip."
+    )
 
-# ===== Receive file =====
+# ====== RECEIVE FILE ======
 @app.on_message(filters.document)
 async def receive_file(client, message: Message):
     user_id = message.from_user.id
@@ -34,7 +48,7 @@ async def receive_file(client, message: Message):
     user_stage[user_id] = "thumb"
     await message.reply("🖼 Send thumbnail (optional) or /skip.")
 
-# ===== Receive thumbnail =====
+# ====== RECEIVE THUMBNAIL ======
 @app.on_message(filters.photo)
 async def receive_thumb(client, message: Message):
     user_id = message.from_user.id
@@ -45,7 +59,7 @@ async def receive_thumb(client, message: Message):
     user_stage[user_id] = "rename"
     await message.reply("✏️ Send new file name (without extension).")
 
-# ===== Skip thumbnail =====
+# ====== SKIP THUMBNAIL ======
 @app.on_message(filters.command("skip"))
 async def skip_thumb(client, message: Message):
     user_id = message.from_user.id
@@ -53,7 +67,7 @@ async def skip_thumb(client, message: Message):
         user_stage[user_id] = "rename"
         await message.reply("✏️ Send new file name (without extension).")
 
-# ===== Receive new name and upload =====
+# ====== RECEIVE NEW NAME & UPLOAD ======
 @app.on_message(filters.text & ~filters.command("skip"))
 async def receive_new_name(client, message: Message):
     user_id = message.from_user.id
@@ -70,7 +84,7 @@ async def receive_new_name(client, message: Message):
     # Download original file
     file_path = await original_msg.download(file_name=f"./{final_name}")
 
-    # Emoji progress simulation
+    # ===== Emoji progress bar 20% steps =====
     total_size = os.path.getsize(file_path)
     chunk_size = max(total_size // 5, 1)
     sent = 0
@@ -87,15 +101,15 @@ async def receive_new_name(client, message: Message):
         except:
             pass
 
-    # Upload renamed file
+    # ===== Upload renamed file =====
     thumb_path = user_thumbs.get(user_id)
     await message.reply_document(
         document=file_path,
-        thumb=thumb_path,
+        thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
         caption=f"✅ Renamed to {final_name}"
     )
 
-    # Cleanup
+    # ===== CLEANUP =====
     if os.path.exists(file_path):
         os.remove(file_path)
     if thumb_path and os.path.exists(thumb_path):
@@ -106,4 +120,12 @@ async def receive_new_name(client, message: Message):
     await status.delete()
     await progress_msg.delete()
 
-app.run()
+
+# ====== RUN BOT WITH RETRY ======
+while True:
+    try:
+        print("✅ Bot is running...")
+        app.run()
+    except pyrogram.errors.BadMsgNotification:
+        print("⚠️ BadMsgNotification detected. Retrying in 5s...")
+        time.sleep(5)
