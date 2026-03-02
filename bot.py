@@ -2,7 +2,12 @@ import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
 
+# ⚠️ Build stage crash avoid
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    print("BOT_TOKEN not found. Skipping bot startup (build stage).")
+    exit(0)
 
 user_files = {}
 user_thumbs = {}
