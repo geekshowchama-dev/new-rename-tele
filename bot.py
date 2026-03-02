@@ -10,18 +10,17 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    print("❌ BOT_TOKEN not found!")
+    print("❌ BOT_TOKEN not found! Add it in Railway Variables.")
     exit(0)
 
-# ===== Temporary storage =====
 user_files = {}
 user_thumbs = {}
 user_stage = {}
 
-# ===== Start command =====
+# ===== /start command =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Hi! Send me a file to rename. "
+        "👋 Hi! Send me a file to rename.\n"
         "Optional: you can send a thumbnail. Use /skip to skip thumbnail."
     )
 
@@ -69,22 +68,22 @@ async def receive_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ext = os.path.splitext(document.file_name)[1]
     final_name = new_name + ext
 
+    # Download original file locally
     file = await document.get_file()
     await file.download_to_drive(final_name)
 
-    # ===== Emoji progress bar =====
+    # ===== Emoji progress bar (simulate 20% steps) =====
     status_msg = await update.message.reply_text("⚡ Uploading: ⬜⬜⬜⬜⬜ 0%")
     total_size = os.path.getsize(final_name)
-    chunk_size = total_size // 5
+    chunk_size = max(total_size // 5, 1)
 
     sent = 0
     for i in range(5):
-        # simulate chunk read
         with open(final_name, "rb") as f:
             f.read(chunk_size)
         sent += chunk_size
         percent = int(sent * 100 / total_size)
-        steps = percent // 20
+        steps = min(percent // 20, 5)
         bar = "🟩" * steps + "⬜" * (5 - steps)
         try:
             await status_msg.edit_text(f"⚡ Uploading: {bar} {percent}%")
@@ -99,7 +98,7 @@ async def receive_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thumb=open(thumb_file, "rb") if thumb_file and os.path.exists(thumb_file) else None
     )
 
-    # ===== Cleanup =====
+    # Cleanup
     os.remove(final_name)
     if thumb_file and os.path.exists(thumb_file):
         os.remove(thumb_file)
