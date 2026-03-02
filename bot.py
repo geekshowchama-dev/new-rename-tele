@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
 
 # ⚠️ Build stage crash avoid
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("8705420666:AAEWZyWTCYDJDmlm7G44Jm3MImpGi6XTSq4")
 
 if not BOT_TOKEN:
     print("BOT_TOKEN not found. Skipping bot startup (build stage).")
