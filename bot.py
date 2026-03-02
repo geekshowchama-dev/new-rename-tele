@@ -1,23 +1,13 @@
 import os
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    MessageHandler,
-    CommandHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# ===== BOT TOKEN FROM RAILWAY =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 if not BOT_TOKEN:
-    print("❌ BOT_TOKEN not found. Add it in Railway Variables.")
+    print("BOT_TOKEN not found!")
     exit(0)
 
-# ===== Temporary storage =====
 user_files = {}
-user_thumbs = {}
 user_stage = {}
 
 # ===== Step 1: Receive file =====
@@ -27,33 +17,10 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Send a valid file.")
         return
     user_files[user_id] = update.message.document
-    user_stage[user_id] = "thumb"
-    await update.message.reply_text("🖼 Send thumbnail (optional). If none, send /skip.")
-
-# ===== Step 2: Receive thumbnail =====
-async def receive_thumb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_stage.get(user_id) != "thumb":
-        return
-    if not update.message.photo:
-        await update.message.reply_text("❌ Send a valid photo or /skip.")
-        return
-    photo = update.message.photo[-1]
-    file = await photo.get_file()
-    thumb_path = f"{user_id}_thumb.jpg"
-    await file.download_to_drive(thumb_path)
-    user_thumbs[user_id] = thumb_path
     user_stage[user_id] = "rename"
     await update.message.reply_text("✏️ Send new file name (without extension).")
 
-# ===== Step 2b: Skip thumbnail =====
-async def skip_thumb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_stage.get(user_id) == "thumb":
-        user_stage[user_id] = "rename"
-        await update.message.reply_text("✏️ Send new file name (without extension).")
-
-# ===== Step 3: Receive new name and upload =====
+# ===== Step 2: Receive new name and upload with progress =====
 async def receive_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_stage.get(user_id) != "rename":
@@ -67,32 +34,38 @@ async def receive_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await document.get_file()
     await file.download_to_drive(final_name)
 
-    # Safe thumbnail handling
-    thumb_file = user_thumbs.get(user_id)
+    # ===== Emoji Progress Function =====
+    async def progress_callback(current, total, message):
+        percent = int(current * 100 / total)
+        # Show in steps of 20%
+        steps = percent // 20
+        bar = "🟩" * steps + "⬜" * (5 - steps)
+        try:
+            await message.edit_text(f"⚡ Uploading: {bar} {percent}%")
+        except:
+            pass  # ignore edit errors
+
+    status_msg = await update.message.reply_text("⚡ Uploading: ⬜⬜⬜⬜⬜ 0%")
+
+    # ===== Upload with progress =====
+    from telegram import InputFile
+
+    with open(final_name, "rb") as f:
+        total = os.path.getsize(final_name)
+        chunk_size = total // 5  # 20% each
+        sent = 0
+        for i in range(5):
+            # simulate upload chunk
+            f.read(chunk_size)
+            sent += chunk_size
+            await progress_callback(sent, total, status_msg)
+
+    # Send final document
     await update.message.reply_document(
         document=open(final_name, "rb"),
-        caption=f"✅ Renamed to {final_name}",
-        thumb=open(thumb_file, "rb") if thumb_file and os.path.exists(thumb_file) else None
+        caption=f"✅ Renamed to {final_name}"
     )
 
-    # Cleanup
     os.remove(final_name)
-    if thumb_file and os.path.exists(thumb_file):
-        os.remove(thumb_file)
-
     user_files.pop(user_id, None)
-    user_thumbs.pop(user_id, None)
     user_stage.pop(user_id, None)
-
-# ===== Build App =====
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-# ===== Handlers =====
-app.add_handler(MessageHandler(filters.Document.ALL, receive_file))
-app.add_handler(MessageHandler(filters.PHOTO, receive_thumb))
-app.add_handler(CommandHandler("skip", skip_thumb))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_name))
-
-# ===== Start bot =====
-print("✅ Bot is running...")
-app.run_polling(drop_pending_updates=True, close_loop=False)
